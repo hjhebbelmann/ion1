@@ -8,11 +8,12 @@
 #include "cu2.h"
 #include "cu3.h"
 #include "display.h"
+#include "st7789_display.h"
 
 static EventGroupHandle_t eventGroupHandle;
 static TimerHandle_t displayUpdateTimer;
 
-#if CONFIG_ION_CU2 || CONFIG_ION_CU3
+#if CONFIG_ION_CU2 || CONFIG_ION_CU3 || CONFIG_ION_ST7789
 static const int DISPLAY_UPDATE_BIT = BIT0;
 #endif
 
@@ -25,7 +26,7 @@ void initDisplay() {
 }
 
 void requestDisplayUpdate() {
-#if CONFIG_ION_CU2 || CONFIG_ION_CU3
+#if CONFIG_ION_CU2 || CONFIG_ION_CU3 || CONFIG_ION_ST7789
     xEventGroupSetBits(eventGroupHandle, DISPLAY_UPDATE_BIT);
 #endif
 }
@@ -61,6 +62,10 @@ static void displayUpdate(ion_state * state) {
 #elif CONFIG_ION_CU3
     displayUpdateCu3(state->state == CHARGING ? DSP_BAT_CHARGE : DSP_SCREEN, state->displayOn, getLight(), false, state->level, state->speed, getTrip1(), getTrip2());
 #endif
+
+#if CONFIG_ION_ST7789
+    displayUpdateSt7789(state->state == CHARGING ? ST7789_DSP_BAT_CHARGE : ST7789_DSP_SCREEN, state->displayOn, getLight(), state->level, state->speed, getTrip1());
+#endif
 }
 
 bool handleDisplayUpdate(ion_state * state) {
@@ -70,7 +75,7 @@ bool handleDisplayUpdate(ion_state * state) {
     }
 #endif
 
-#if CONFIG_ION_CU2 || CONFIG_ION_CU3
+#if CONFIG_ION_CU2 || CONFIG_ION_CU3 || CONFIG_ION_ST7789
     EventBits_t bitsToCheck =  DISPLAY_UPDATE_BIT;
 
     EventBits_t bits = xEventGroupWaitBits(eventGroupHandle, bitsToCheck, false, false, 0);

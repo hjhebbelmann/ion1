@@ -91,4 +91,13 @@ menu "Sparta Ion Config"
         bool "Enable keepalive heartbeat. Will reset the ESP32 when main loop is stuck for more than a minute."
         default n
 
+    config ION_EXT_MONITOR
+        bool "Enable external ADS1115 ADC + ST7789 display (CYD board) for voltage/current/power/energy monitoring"
+        default n
+
+    config ION_ST7789
+        bool "Enable ST7789 display (CYD board) as a local dashboard, analog to the CU2/CU3 handlebar display"
+        default n
+        depends on !ION_EXT_MONITOR
+
 endmenu

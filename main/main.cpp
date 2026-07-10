@@ -27,6 +27,12 @@
 #if CONFIG_ION_ADC
     #include "bat.h"
 #endif
+#if CONFIG_ION_EXT_MONITOR
+    #include "ext_monitor.h"
+#endif
+#if CONFIG_ION_ST7789
+    #include "st7789_display.h"
+#endif
 #include "display.h"
 #include "motor.h"
 #include "relays.h"
@@ -242,6 +248,10 @@ static void my_task(void *pvParameter) {
     adc_init();
 #endif
 
+#if CONFIG_ION_EXT_MONITOR
+    initExtMonitor();
+#endif
+
     init_littlefs();
 
     initUart();
@@ -256,6 +266,10 @@ static void my_task(void *pvParameter) {
             BUTTON_LIGHT_LONG_PRESS_BIT, 
             IGNORE_HELD_BIT
     );
+#endif
+
+#if CONFIG_ION_ST7789
+    initSt7789Display();
 #endif
 
     initDisplay();

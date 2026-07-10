@@ -1,0 +1,3 @@
+# Bolt-on ESP32-2432S028R ("Cheap Yellow Display") board, used as an
+# external voltage/current/power/energy monitor via an ADS1115 ADC.
+CONFIG_ION_EXT_MONITOR=y
