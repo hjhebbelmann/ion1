@@ -15,3 +15,10 @@ enum board_button_event { BOARD_BUTTON_UP, BOARD_BUTTON_HELD };
 
 // Safe to call from any task.
 void boardButtonEvent(board_button_event event);
+
+/**
+ * A short press of a light button (like the CU2's light button): toggles the
+ * light and refreshes the display. Used by the on-screen light button.
+ * Safe to call from any task.
+ */
+void lightButtonPress();

@@ -105,6 +105,10 @@ void boardButtonEvent(board_button_event event) {
     }
 }
 
+void lightButtonPress() {
+    xEventGroupSetBits(controlEventGroup, BUTTON_LIGHT_SHORT_PRESS_BIT);
+}
+
 #if CONFIG_ION_KEEPALIVE
 volatile bool myTaskAlive = false;
 TimerHandle_t healthCheckTimer ;

@@ -42,17 +42,18 @@ static const char *TAG = "st7789_display";
 // How often the LVGL task checks for a new snapshot from the main loop.
 #define APPLY_PERIOD_MS 50
 
-#define STATUS_H 28
 #define TILE_GAP 4
+#define DASH_BTN_W 72
 
 #define COLOR_TILE_BG lv_color_hex(0x1C1C1C)
 #define COLOR_TITLE lv_color_hex(0x9E9E9E)
 #define COLOR_VALUE lv_color_white()
-#define COLOR_LIGHT_ON lv_color_hex(0xFFD54F)
-#define COLOR_LIGHT_OFF lv_color_hex(0x616161)
+#define COLOR_LIGHT_ON lv_color_hex(0xFFC107)
+#define COLOR_LIGHT_OFF lv_color_hex(0x424242)
+#define COLOR_LIGHT_TEXT_ON lv_color_black()
 #define COLOR_BAR lv_color_hex(0x43A047)
-#define COLOR_START_BTN lv_color_hex(0x2E7D32)
-#define COLOR_START_BTN_PRESSED lv_color_hex(0x66BB6A)
+#define COLOR_BOARD_BTN lv_color_hex(0x2E7D32)
+#define COLOR_BOARD_BTN_PRESSED lv_color_hex(0x66BB6A)
 
 #define START_MARGIN 12
 #define START_BTN_W 140
@@ -81,7 +82,8 @@ static lv_obj_t *assistVal;
 static lv_obj_t *tripVal;
 static lv_obj_t *batVal;
 static lv_obj_t *batBar;
-static lv_obj_t *lightLabel;
+static lv_obj_t *lightBtn;
+static lv_obj_t *lightBtnText;
 
 static lv_obj_t *chargeScreen;
 static lv_obj_t *chargeVal;
@@ -146,7 +148,7 @@ static lv_obj_t *createTile(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, i
     lv_obj_set_style_bg_color(tile, COLOR_TILE_BG, 0);
     lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(tile, 8, 0);
-    lv_obj_set_style_pad_all(tile, 6, 0);
+    lv_obj_set_style_pad_all(tile, 4, 0);
 
     lv_obj_t *titleLabel = createLabel(tile, &lv_font_montserrat_16, COLOR_TITLE, title);
     lv_obj_align(titleLabel, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -156,14 +158,77 @@ static lv_obj_t *createTile(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, i
     return valueLabel;
 }
 
+// The board button behaves exactly like CONFIG_ION_BUTTON_BOARD_PIN: releasing
+// it is a short press (also after a long hold), and holding it for the button
+// component's long press time is a long press.
+static void boardButtonCb(lv_event_t *e) {
+    switch(lv_event_get_code(e)) {
+        case LV_EVENT_LONG_PRESSED:
+            boardButtonEvent(BOARD_BUTTON_HELD);
+            break;
+        case LV_EVENT_RELEASED:
+            boardButtonEvent(BOARD_BUTTON_UP);
+            break;
+        default:
+            break;
+    }
+}
+
+static void lightButtonCb(lv_event_t *e) {
+    lightButtonPress();
+}
+
+static lv_obj_t *createButton(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h) {
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_set_pos(btn, x, y);
+    lv_obj_set_size(btn, w, h);
+    lv_obj_set_style_radius(btn, 12, 0);
+    lv_obj_set_style_shadow_width(btn, 0, 0);
+    return btn;
+}
+
+// An on-screen copy of the board button (start screen "START", dashboard "+").
+static lv_obj_t *createBoardButton(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h) {
+    lv_obj_t *btn = createButton(parent, x, y, w, h);
+    lv_obj_set_style_bg_color(btn, COLOR_BOARD_BTN, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_BOARD_BTN_PRESSED, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn, boardButtonCb, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(btn, boardButtonCb, LV_EVENT_RELEASED, NULL);
+    return btn;
+}
+
 static void createRideScreen(lv_obj_t *scr) {
     rideScreen = createPlainContainer(scr);
     lv_obj_set_size(rideScreen, ST7789_WIDTH, ST7789_HEIGHT);
 
-    const int32_t tileW = (ST7789_WIDTH - 3 * TILE_GAP) / 2;
-    const int32_t tileH = (ST7789_HEIGHT - STATUS_H - 3 * TILE_GAP) / 2;
-    const int32_t col0 = TILE_GAP;
-    const int32_t col1 = 2 * TILE_GAP + tileW;
+    // Left column: "+" (the board button: assist level up) above the light switch.
+    const int32_t btnH = (ST7789_HEIGHT - 3 * TILE_GAP) / 2;
+
+    lv_obj_t *plusBtn = createBoardButton(rideScreen, TILE_GAP, TILE_GAP, DASH_BTN_W, btnH);
+    lv_obj_t *plusText = createLabel(plusBtn, &lv_font_montserrat_32, COLOR_VALUE, "+");
+    lv_obj_center(plusText);
+
+    // The light button's color and text show the light state (CHECKED = on).
+    // Its label inherits the text color from the button, so it follows the state.
+    lightBtn = createButton(rideScreen, TILE_GAP, 2 * TILE_GAP + btnH, DASH_BTN_W, btnH);
+    lv_obj_set_style_bg_color(lightBtn, COLOR_LIGHT_OFF, 0);
+    lv_obj_set_style_bg_color(lightBtn, COLOR_LIGHT_ON, LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(lightBtn, COLOR_VALUE, 0);
+    lv_obj_set_style_text_color(lightBtn, COLOR_LIGHT_TEXT_ON, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(lightBtn, lightButtonCb, LV_EVENT_CLICKED, NULL);
+    lightBtnText = lv_label_create(lightBtn);
+    lv_obj_set_style_text_font(lightBtnText, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_align(lightBtnText, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(lightBtnText, "LIGHT\nOFF");
+    lv_obj_center(lightBtnText);
+
+    // Right: 2x2 value tiles.
+    const int32_t tilesX = 2 * TILE_GAP + DASH_BTN_W;
+    const int32_t tileW = (ST7789_WIDTH - tilesX - 2 * TILE_GAP) / 2;
+    const int32_t tileH = (ST7789_HEIGHT - 3 * TILE_GAP) / 2;
+    const int32_t col0 = tilesX;
+    const int32_t col1 = tilesX + tileW + TILE_GAP;
     const int32_t row0 = TILE_GAP;
     const int32_t row1 = 2 * TILE_GAP + tileH;
 
@@ -173,11 +238,8 @@ static void createRideScreen(lv_obj_t *scr) {
     batVal = createTile(rideScreen, col1, row1, tileW, tileH, "BATTERY");
 
     // Thin charge bar along the bottom of the battery tile.
-    batBar = createBar(lv_obj_get_parent(batVal), tileW - 12, 6);
+    batBar = createBar(lv_obj_get_parent(batVal), tileW - 8, 6);
     lv_obj_align(batBar, LV_ALIGN_BOTTOM_MID, 0, 0);
-
-    lightLabel = createLabel(rideScreen, &lv_font_montserrat_16, COLOR_LIGHT_OFF, "LIGHT OFF");
-    lv_obj_align(lightLabel, LV_ALIGN_BOTTOM_MID, 0, -(STATUS_H - 16) / 2);
 }
 
 static void createChargeScreen(lv_obj_t *scr) {
@@ -196,22 +258,6 @@ static void createChargeScreen(lv_obj_t *scr) {
     lv_obj_add_flag(chargeScreen, LV_OBJ_FLAG_HIDDEN);
 }
 
-// The start button behaves exactly like the board button: releasing it is a
-// short press (also after a long hold), and holding it for the button
-// component's long press time is a long press.
-static void startButtonCb(lv_event_t *e) {
-    switch(lv_event_get_code(e)) {
-        case LV_EVENT_LONG_PRESSED:
-            boardButtonEvent(BOARD_BUTTON_HELD);
-            break;
-        case LV_EVENT_RELEASED:
-            boardButtonEvent(BOARD_BUTTON_UP);
-            break;
-        default:
-            break;
-    }
-}
-
 // Calibration aid for the touch orientation settings in st7789.c.
 static void logTouchCb(lv_event_t *e) {
     lv_indev_t *indev = lv_indev_active();
@@ -227,17 +273,9 @@ static void createStartScreen(lv_obj_t *scr) {
     lv_obj_set_size(startScreen, ST7789_WIDTH, ST7789_HEIGHT);
     lv_obj_add_event_cb(startScreen, logTouchCb, LV_EVENT_PRESSED, NULL);
 
-    // Left: the push button, full height.
-    lv_obj_t *btn = lv_button_create(startScreen);
-    lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
-    lv_obj_set_pos(btn, START_MARGIN, START_MARGIN);
-    lv_obj_set_size(btn, START_BTN_W, ST7789_HEIGHT - 2 * START_MARGIN);
+    // Left: the board button, full height.
+    lv_obj_t *btn = createBoardButton(startScreen, START_MARGIN, START_MARGIN, START_BTN_W, ST7789_HEIGHT - 2 * START_MARGIN);
     lv_obj_set_style_radius(btn, 16, 0);
-    lv_obj_set_style_bg_color(btn, COLOR_START_BTN, 0);
-    lv_obj_set_style_bg_color(btn, COLOR_START_BTN_PRESSED, LV_STATE_PRESSED);
-    lv_obj_set_style_shadow_width(btn, 0, 0);
-    lv_obj_add_event_cb(btn, startButtonCb, LV_EVENT_LONG_PRESSED, NULL);
-    lv_obj_add_event_cb(btn, startButtonCb, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(btn, logTouchCb, LV_EVENT_PRESSED, NULL);
 
     lv_obj_t *icon = createLabel(btn, &lv_font_montserrat_32, COLOR_VALUE, LV_SYMBOL_POWER);
@@ -316,8 +354,12 @@ static void applyState(const DashState &st) {
     snprintf(buf, sizeof(buf), "%lu.%02lu", (unsigned long)(st.trip1 / 100), (unsigned long)(st.trip1 % 100));
     setText(tripVal, buf);
 
-    setText(lightLabel, st.light ? "LIGHT ON" : "LIGHT OFF");
-    lv_obj_set_style_text_color(lightLabel, st.light ? COLOR_LIGHT_ON : COLOR_LIGHT_OFF, 0);
+    setText(lightBtnText, st.light ? "LIGHT\nON" : "LIGHT\nOFF");
+    if(st.light) {
+        lv_obj_add_state(lightBtn, LV_STATE_CHECKED);
+    } else {
+        lv_obj_remove_state(lightBtn, LV_STATE_CHECKED);
+    }
 
     showOnly(rideScreen);
 }
