@@ -34,6 +34,9 @@
 #if CONFIG_ION_ST7789
     #include "st7789_display.h"
 #endif
+#if CONFIG_ION_ST7789_ADS1115
+    #include "aux_adc.h"
+#endif
 #include "display.h"
 #include "motor.h"
 #include "relays.h"
@@ -292,6 +295,10 @@ static void my_task(void *pvParameter) {
             BUTTON_LIGHT_LONG_PRESS_BIT, 
             IGNORE_HELD_BIT
     );
+#endif
+
+#if CONFIG_ION_ST7789_ADS1115
+    initAuxAdc();
 #endif
 
 #if CONFIG_ION_ST7789

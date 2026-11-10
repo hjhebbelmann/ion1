@@ -100,4 +100,23 @@ menu "Sparta Ion Config"
         default n
         depends on !ION_EXT_MONITOR
 
+    config ION_ST7789_ADS1115
+        bool "Look for an ADS1115 ADC and show its four input voltages as an extra dashboard view"
+        default y
+        depends on ION_ST7789
+        help
+            Probes the I2C bus for an ADS1115 (address 0x48, ADDR pin to GND).
+            If one is found, the dashboard's VIEW button gets a fourth view
+            with the voltages of A0..A3 (single-ended, 0..~4V range).
+
+    config ION_ST7789_ADS1115_SDA
+        int "ADS1115 I2C SDA pin"
+        default 16
+        depends on ION_ST7789_ADS1115
+
+    config ION_ST7789_ADS1115_SCL
+        int "ADS1115 I2C SCL pin"
+        default 17
+        depends on ION_ST7789_ADS1115
+
 endmenu

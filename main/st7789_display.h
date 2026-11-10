@@ -18,6 +18,12 @@ void initSt7789Display();
 void showStartScreenSt7789();
 
 /**
+ * Shows a "Calibrated" notice at the bottom of the screen for 4 seconds.
+ * Non-blocking, safe to call from the main loop.
+ */
+void showCalibratedSt7789();
+
+/**
  * Updates the local ST7789 (LVGL) dashboard. Analog to displayUpdateCu3(), but renders
  * to the local screen instead of pushing a message over the CU3 UART protocol.
  *

@@ -5,9 +5,13 @@
 #include "cmds.h"
 #include "bow.h"
 #include "states.h"
+#include "st7789_display.h"
 
 void toCalibrateState(ion_state * state) {
     queueBlink(10, 100, 100);
+#if CONFIG_ION_ST7789
+    showCalibratedSt7789();
+#endif
 
     state->state = START_CALIBRATE;
     state->step = 0;
