@@ -8,9 +8,14 @@
 #include "relays.h"
 #include "motor.h"
 #include "states.h"
+#include "st7789_display.h"
 
 void toTurnMotorOffState(ion_state * state) {
     state->displayOn = false;
+#if CONFIG_ION_ST7789
+    // Display updates get stopped while turning off, so don't wait for one.
+    showStartScreenSt7789();
+#endif
     queueBlink(2, 400, 50);
 
     state->state = TURN_MOTOR_OFF;

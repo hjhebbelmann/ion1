@@ -8,8 +8,14 @@
 // Analog to cu3.h's display_type: which of the local dashboard screens to draw.
 enum st7789_display_type { ST7789_DSP_SCREEN = 0, ST7789_DSP_BAT_CHARGE };
 
-// Brings up the panel + LVGL and builds the dashboard UI (initially blank).
+// Brings up the panel + LVGL and builds the UI, starting on the start screen.
 void initSt7789Display();
+
+/**
+ * Switches back to the start screen (the dashboard-off state), e.g. when the
+ * motor is being turned off. Non-blocking, safe to call from the main loop.
+ */
+void showStartScreenSt7789();
 
 /**
  * Updates the local ST7789 (LVGL) dashboard. Analog to displayUpdateCu3(), but renders

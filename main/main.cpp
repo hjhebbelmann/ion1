@@ -16,6 +16,7 @@
 #include "nvs_flash.h"
 #include "bytes.h"
 #include "button.h"
+#include "board_button.h"
 #include "bow.h"
 #include "cmds.h"
 #include "blink.h"
@@ -82,6 +83,27 @@ enum messageHandlingResult {
 static TimerHandle_t measureBatTimer;
 
 static void measureBatTimerCallback(TimerHandle_t xTimer) { xEventGroupSetBits(controlEventGroup, MEASURE_BAT_BIT); }
+
+static portMUX_TYPE boardButtonMux = portMUX_INITIALIZER_UNLOCKED;
+static bool boardButtonHeld = false;
+
+void boardButtonEvent(board_button_event event) {
+    EventBits_t bit = 0;
+
+    taskENTER_CRITICAL(&boardButtonMux);
+    if(event == BOARD_BUTTON_UP) {
+        boardButtonHeld = false;
+        bit = BUTTON_MODE_SHORT_PRESS_BIT;
+    } else if(event == BOARD_BUTTON_HELD && !boardButtonHeld) {
+        boardButtonHeld = true;
+        bit = BUTTON_LIGHT_LONG_PRESS_BIT;
+    }
+    taskEXIT_CRITICAL(&boardButtonMux);
+
+    if(bit != 0) {
+        xEventGroupSetBits(controlEventGroup, bit);
+    }
+}
 
 #if CONFIG_ION_KEEPALIVE
 volatile bool myTaskAlive = false;
@@ -400,18 +422,16 @@ extern "C" void app_main() {
     xTaskCreatePinnedToCore(my_task, "my_task", 4096 * 2, NULL, 5, NULL, SECOND_CPU);
 
 #if CONFIG_ION_BUTTON
-    bool held = false;
     button_event_t ev;
     QueueHandle_t button_events = pulled_button_init(BIT64(BUTTON) | BIT64(BUTTON_EXT), GPIO_PULLUP_ONLY);
     while(true) {
         if(xQueueReceive(button_events, &ev, 1000 / portTICK_PERIOD_MS)) {
-            if((ev.pin == BUTTON || ev.pin == BUTTON_EXT) && (ev.event == BUTTON_UP)) {
-                held = false;
-                xEventGroupSetBits(controlEventGroup, BUTTON_MODE_SHORT_PRESS_BIT);
-            }
-            if(!held && (ev.pin == BUTTON || ev.pin == BUTTON_EXT) && (ev.event == BUTTON_HELD)) {
-                xEventGroupSetBits(controlEventGroup, BUTTON_LIGHT_LONG_PRESS_BIT);
-                held = true;
+            if(ev.pin == BUTTON || ev.pin == BUTTON_EXT) {
+                if(ev.event == BUTTON_UP) {
+                    boardButtonEvent(BOARD_BUTTON_UP);
+                } else if(ev.event == BUTTON_HELD) {
+                    boardButtonEvent(BOARD_BUTTON_HELD);
+                }
             }
         }
     }

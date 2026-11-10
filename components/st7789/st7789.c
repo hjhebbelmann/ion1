@@ -7,7 +7,14 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_panel_st7789.h"
 #include "esp_lcd_panel_vendor.h"
+#include "esp_log.h"
 #include "soc/soc_caps.h"
+
+#if ST7789_HAS_TOUCH
+#include "esp_lcd_touch_xpt2046.h"
+
+static const char *TAG = "st7789";
+#endif
 
 /* ESP32-2432S028R ("CYD") pinout */
 #define LCD_HOST SPI2_HOST
@@ -46,7 +53,72 @@
 #define CYD_RGB_ORDER LCD_RGB_ELEMENT_ORDER_BGR
 #define CYD_INVERT_COLOR false
 
+/*
+ * Touch orientation. The XPT2046 reports positions along its own axes, which
+ * don't necessarily match the (rotated) display. MIRROR_X/Y flip the touch
+ * controller's own X/Y axes and are applied *before* the swap. If touches
+ * land in the wrong place, watch the "touch at x,y" log line (printed for
+ * taps on the start screen) while tapping the corners and adjust:
+ *  - x and y follow the wrong finger direction (moving right changes y): flip SWAP_XY
+ *  - left/right reversed: with SWAP_XY flip MIRROR_Y, without it flip MIRROR_X
+ *  - top/bottom reversed: with SWAP_XY flip MIRROR_X, without it flip MIRROR_Y
+ */
+#define CYD_TOUCH_SWAP_XY true
+#define CYD_TOUCH_MIRROR_X false
+#define CYD_TOUCH_MIRROR_Y true
+#define TOUCH_HOST SPI3_HOST
+
 static lv_display_t *s_disp;
+static lv_indev_t *s_touch;
+
+#if ST7789_HAS_TOUCH
+static lv_indev_t *init_touch(lv_display_t *disp)
+{
+    spi_bus_config_t buscfg = {
+        .sclk_io_num = ST7789_TOUCH_PIN_SCLK,
+        .mosi_io_num = ST7789_TOUCH_PIN_MOSI,
+        .miso_io_num = ST7789_TOUCH_PIN_MISO,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+    };
+    ESP_ERROR_CHECK(spi_bus_initialize(TOUCH_HOST, &buscfg, SPI_DMA_CH_AUTO));
+
+    esp_lcd_panel_io_handle_t tp_io = NULL;
+    esp_lcd_panel_io_spi_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_SPI_XPT2046_CONFIG(ST7789_TOUCH_PIN_CS);
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)TOUCH_HOST, &tp_io_cfg, &tp_io));
+
+    /* x_max/y_max are in the touch controller's own (unswapped) orientation. */
+    esp_lcd_touch_config_t tp_cfg = {
+        .x_max = CYD_TOUCH_SWAP_XY ? ST7789_HEIGHT : ST7789_WIDTH,
+        .y_max = CYD_TOUCH_SWAP_XY ? ST7789_WIDTH : ST7789_HEIGHT,
+        .rst_gpio_num = -1,
+        .int_gpio_num = -1,
+        .flags = {
+            .swap_xy = CYD_TOUCH_SWAP_XY,
+            .mirror_x = CYD_TOUCH_MIRROR_X,
+            .mirror_y = CYD_TOUCH_MIRROR_Y,
+        },
+    };
+    esp_lcd_touch_handle_t tp = NULL;
+    esp_err_t err = esp_lcd_touch_new_spi_xpt2046(tp_io, &tp_cfg, &tp);
+    if (err != ESP_OK) {
+        /* The display is still useful without touch, so don't abort. */
+        ESP_LOGE(TAG, "XPT2046 touch init failed: %s", esp_err_to_name(err));
+        return NULL;
+    }
+
+    const lvgl_port_touch_cfg_t touch_cfg = {
+        .disp = disp,
+        .handle = tp,
+    };
+    return lvgl_port_add_touch(&touch_cfg);
+}
+#endif
+
+lv_indev_t *st7789_get_touch(void)
+{
+    return s_touch;
+}
 
 static void init_backlight(void)
 {
@@ -139,6 +211,10 @@ lv_display_t *st7789_init(void)
     lv_obj_set_style_text_color(scr, lv_color_white(), 0);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     lvgl_port_unlock();
+
+#if ST7789_HAS_TOUCH
+    s_touch = init_touch(s_disp);
+#endif
 
     gpio_set_level(PIN_LCD_BL, 1);
 

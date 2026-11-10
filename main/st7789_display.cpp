@@ -4,10 +4,40 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 
 #include "bat.h"
+#include "board_button.h"
 #include "st7789.h"
+
+static const char *TAG = "st7789_display";
+
+// The on-screen start button mimics the board button, including its hold time.
+#ifndef CONFIG_ESP32_BUTTON_LONG_PRESS_DURATION_MS
+#define CONFIG_ESP32_BUTTON_LONG_PRESS_DURATION_MS 2000
+#endif
+
+// The CYD's touch controller occupies these pins; catch configs that also use them.
+#if ST7789_HAS_TOUCH
+#define IS_TOUCH_PIN(p) ((p) == ST7789_TOUCH_PIN_SCLK || (p) == ST7789_TOUCH_PIN_MOSI || \
+                         (p) == ST7789_TOUCH_PIN_MISO || (p) == ST7789_TOUCH_PIN_CS)
+#if CONFIG_ION_LIGHT && IS_TOUCH_PIN(CONFIG_ION_LIGHT_PIN)
+#error "CONFIG_ION_LIGHT_PIN is used by the CYD touch controller"
+#endif
+#if CONFIG_ION_RELAY && IS_TOUCH_PIN(CONFIG_ION_RELAY_PIN)
+#error "CONFIG_ION_RELAY_PIN is used by the CYD touch controller"
+#endif
+#if CONFIG_ION_CHARGE && IS_TOUCH_PIN(CONFIG_ION_CHARGE_PIN)
+#error "CONFIG_ION_CHARGE_PIN is used by the CYD touch controller"
+#endif
+#if CONFIG_ION_BUTTON && (IS_TOUCH_PIN(CONFIG_ION_BUTTON_BOARD_PIN) || IS_TOUCH_PIN(CONFIG_ION_BUTTON_EXTERNAL_PIN))
+#error "A CONFIG_ION_BUTTON_*_PIN is used by the CYD touch controller"
+#endif
+#if IS_TOUCH_PIN(CONFIG_ION_LED_PIN) || IS_TOUCH_PIN(CONFIG_ION_RXD) || IS_TOUCH_PIN(CONFIG_ION_TXD)
+#error "CONFIG_ION_LED_PIN / CONFIG_ION_RXD / CONFIG_ION_TXD is used by the CYD touch controller"
+#endif
+#endif
 
 // How often the LVGL task checks for a new snapshot from the main loop.
 #define APPLY_PERIOD_MS 50
@@ -21,6 +51,11 @@
 #define COLOR_LIGHT_ON lv_color_hex(0xFFD54F)
 #define COLOR_LIGHT_OFF lv_color_hex(0x616161)
 #define COLOR_BAR lv_color_hex(0x43A047)
+#define COLOR_START_BTN lv_color_hex(0x2E7D32)
+#define COLOR_START_BTN_PRESSED lv_color_hex(0x66BB6A)
+
+#define START_MARGIN 12
+#define START_BTN_W 140
 
 // Snapshot of what should be on screen. Written by the main (motor) loop,
 // read by the LVGL task. The main loop never touches LVGL itself, so it never
@@ -51,6 +86,11 @@ static lv_obj_t *lightLabel;
 static lv_obj_t *chargeScreen;
 static lv_obj_t *chargeVal;
 static lv_obj_t *chargeBar;
+
+// Shown whenever the dashboard is "off" (at boot, and after the motor turned off).
+static lv_obj_t *startScreen;
+static lv_obj_t *startBatVal;
+static lv_obj_t *startBatBar;
 
 // Assist mode: 0:'0', 1:'1', 2:'2', 3:'3', 4:'P', 5:'R', 7:'4'.
 static const char *assistLevelText(uint8_t assist) {
@@ -156,25 +196,102 @@ static void createChargeScreen(lv_obj_t *scr) {
     lv_obj_add_flag(chargeScreen, LV_OBJ_FLAG_HIDDEN);
 }
 
+// The start button behaves exactly like the board button: releasing it is a
+// short press (also after a long hold), and holding it for the button
+// component's long press time is a long press.
+static void startButtonCb(lv_event_t *e) {
+    switch(lv_event_get_code(e)) {
+        case LV_EVENT_LONG_PRESSED:
+            boardButtonEvent(BOARD_BUTTON_HELD);
+            break;
+        case LV_EVENT_RELEASED:
+            boardButtonEvent(BOARD_BUTTON_UP);
+            break;
+        default:
+            break;
+    }
+}
+
+// Calibration aid for the touch orientation settings in st7789.c.
+static void logTouchCb(lv_event_t *e) {
+    lv_indev_t *indev = lv_indev_active();
+    if(indev != NULL) {
+        lv_point_t p;
+        lv_indev_get_point(indev, &p);
+        ESP_LOGI(TAG, "touch at %ld,%ld", (long)p.x, (long)p.y);
+    }
+}
+
+static void createStartScreen(lv_obj_t *scr) {
+    startScreen = createPlainContainer(scr);
+    lv_obj_set_size(startScreen, ST7789_WIDTH, ST7789_HEIGHT);
+    lv_obj_add_event_cb(startScreen, logTouchCb, LV_EVENT_PRESSED, NULL);
+
+    // Left: the push button, full height.
+    lv_obj_t *btn = lv_button_create(startScreen);
+    lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_set_pos(btn, START_MARGIN, START_MARGIN);
+    lv_obj_set_size(btn, START_BTN_W, ST7789_HEIGHT - 2 * START_MARGIN);
+    lv_obj_set_style_radius(btn, 16, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_START_BTN, 0);
+    lv_obj_set_style_bg_color(btn, COLOR_START_BTN_PRESSED, LV_STATE_PRESSED);
+    lv_obj_set_style_shadow_width(btn, 0, 0);
+    lv_obj_add_event_cb(btn, startButtonCb, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(btn, startButtonCb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(btn, logTouchCb, LV_EVENT_PRESSED, NULL);
+
+    lv_obj_t *icon = createLabel(btn, &lv_font_montserrat_32, COLOR_VALUE, LV_SYMBOL_POWER);
+    lv_obj_align(icon, LV_ALIGN_CENTER, 0, -16);
+    lv_obj_t *btnText = createLabel(btn, &lv_font_montserrat_16, COLOR_VALUE, "START");
+    lv_obj_align(btnText, LV_ALIGN_CENTER, 0, 22);
+
+    // Right: name and battery state.
+    const int32_t rightX = START_MARGIN + START_BTN_W + START_MARGIN;
+    lv_obj_t *info = createPlainContainer(startScreen);
+    lv_obj_set_pos(info, rightX, START_MARGIN);
+    lv_obj_set_size(info, ST7789_WIDTH - rightX - START_MARGIN, ST7789_HEIGHT - 2 * START_MARGIN);
+
+    lv_obj_t *title = createLabel(info, &lv_font_montserrat_32, COLOR_VALUE, "ION");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
+
+    lv_obj_t *batTitle = createLabel(info, &lv_font_montserrat_16, COLOR_TITLE, "BATTERY");
+    lv_obj_align(batTitle, LV_ALIGN_TOP_MID, 0, 90);
+
+    startBatVal = createLabel(info, &lv_font_montserrat_32, COLOR_VALUE, "-");
+    lv_obj_align(startBatVal, LV_ALIGN_TOP_MID, 0, 112);
+
+    startBatBar = createBar(info, ST7789_WIDTH - rightX - START_MARGIN - 16, 12);
+    lv_obj_align(startBatBar, LV_ALIGN_TOP_MID, 0, 160);
+}
+
 static void showOnly(lv_obj_t *visible) {
-    if(visible == rideScreen) {
-        lv_obj_remove_flag(rideScreen, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(rideScreen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *const all[] = {rideScreen, chargeScreen, startScreen};
+    for(lv_obj_t *obj : all) {
+        if(obj == visible) {
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        }
     }
-    if(visible == chargeScreen) {
-        lv_obj_remove_flag(chargeScreen, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(chargeScreen, LV_OBJ_FLAG_HIDDEN);
-    }
+}
+
+static void updateStartScreen() {
+    // getBatPercentage() only reads a byte kept up to date by the main loop,
+    // so the start screen stays current even while no display updates come in.
+    const uint8_t bat = getBatPercentage();
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%u%%", bat);
+    setText(startBatVal, buf);
+    lv_bar_set_value(startBatBar, bat, LV_ANIM_OFF);
 }
 
 static void applyState(const DashState &st) {
     char buf[16];
 
     if(!st.screen) {
-        // Blank dashboard, same meaning as the CU3 "screen off".
-        showOnly(NULL);
+        // Dashboard off (same meaning as the CU3 "screen off"): show the start screen.
+        updateStartScreen();
+        showOnly(startScreen);
         return;
     }
 
@@ -218,6 +335,8 @@ static void applyTimerCb(lv_timer_t *timer) {
 
     if(dirty) {
         applyState(st);
+    } else if(!lv_obj_has_flag(startScreen, LV_OBJ_FLAG_HIDDEN)) {
+        updateStartScreen();
     }
 }
 
@@ -228,10 +347,27 @@ void initSt7789Display() {
     lv_obj_t *scr = lv_display_get_screen_active(disp);
     createRideScreen(scr);
     createChargeScreen(scr);
-    // Start blank until the main loop says the screen is on.
-    showOnly(NULL);
+    createStartScreen(scr);
+    // Start screen until the main loop says the dashboard is on.
+    updateStartScreen();
+    showOnly(startScreen);
+
+    lv_indev_t *touch = st7789_get_touch();
+    if(touch != NULL) {
+        lv_indev_set_long_press_time(touch, CONFIG_ESP32_BUTTON_LONG_PRESS_DURATION_MS);
+    } else {
+        ESP_LOGW(TAG, "No touch input, the start button only works via the board button");
+    }
+
     lv_timer_create(applyTimerCb, APPLY_PERIOD_MS, NULL);
     lvgl_port_unlock();
+}
+
+void showStartScreenSt7789() {
+    taskENTER_CRITICAL(&stateMux);
+    pendingState.screen = false;
+    pendingDirty = true;
+    taskEXIT_CRITICAL(&stateMux);
 }
 
 void displayUpdateSt7789(st7789_display_type type, bool screen, bool light, uint8_t assist, uint16_t speed, uint32_t trip1) {

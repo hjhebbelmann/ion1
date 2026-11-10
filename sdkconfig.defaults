@@ -20,3 +20,5 @@ CONFIG_LV_FONT_MONTSERRAT_32=y
 # Allocate LVGL objects from the normal heap instead of a fixed 64KB static pool.
 CONFIG_LV_USE_CLIB_MALLOC=y
 CONFIG_LV_THEME_DEFAULT_DARK=y
+# CYD touch (XPT2046): report screen coordinates instead of raw ADC values.
+CONFIG_XPT2046_CONVERT_ADC_TO_COORDS=y
