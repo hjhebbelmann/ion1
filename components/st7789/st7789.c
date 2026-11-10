@@ -64,7 +64,7 @@ static const char *TAG = "st7789";
  *  - top/bottom reversed: with SWAP_XY flip MIRROR_X, without it flip MIRROR_Y
  */
 #define CYD_TOUCH_SWAP_XY true
-#define CYD_TOUCH_MIRROR_X false
+#define CYD_TOUCH_MIRROR_X true
 #define CYD_TOUCH_MIRROR_Y true
 #define TOUCH_HOST SPI3_HOST
 
