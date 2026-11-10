@@ -1,0 +1,10 @@
+dependencies:
+  idf: ">=5.2"
+  # LVGL glue for esp_lcd: owns the LVGL task, tick timer, draw buffers and the LVGL mutex.
+  espressif/esp_lvgl_port:
+    version: "^2.6.0"
+    require: public
+  # Pin LVGL to v9 (esp_lvgl_port alone would also accept v8).
+  lvgl/lvgl:
+    version: "^9.2.0"
+    require: public

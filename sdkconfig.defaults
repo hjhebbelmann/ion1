@@ -12,3 +12,11 @@ CONFIG_FREERTOS_HZ=1000
 
 CONFIG_LOG_COLORS=
 #CONFIG_LOG_DEFAULT_LEVEL_DEBUG=y
+
+# LVGL (used by the ST7789/CYD dashboard and the external power monitor).
+# Fonts used by the UI (14 is LVGL's default and already on).
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_32=y
+# Allocate LVGL objects from the normal heap instead of a fixed 64KB static pool.
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_THEME_DEFAULT_DARK=y
